@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,11 +15,6 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
-
-type Item struct {
-	Title       string `json:"title"`
-	Description string `json:"decription"`
-}
 
 type User struct {
 	// gorm.Model
@@ -39,7 +36,6 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 func returnAllUsers(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	db.Table("users").Find(&users)
-	fmt.Println(users[0].FirstName)
 	respondWithJson(w, http.StatusOK, users)
 }
 
@@ -60,17 +56,36 @@ func returnSingleUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusNotFound, "Item does not exist")
 		return
 	}
-
 	respondWithJson(w, http.StatusOK, user)
+}
+
+func createUser(w http.ResponseWriter, r *http.Request) {
+	var user User
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
+	defer r.Body.Close()
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	if err := json.Unmarshal(body, &user); err != nil {
+		log.Println(body)
+		log.Println(err)
+		respondWithError(w, http.StatusBadRequest, "JSON failed")
+		return
+	}
+	db.Table("users").Create(&user)
+	respondWithJson(w, http.StatusOK, user)
+
 }
 
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", homePage)
-	myRouter.HandleFunc("/users", returnAllUsers)
-	myRouter.HandleFunc("/users/{id}", returnSingleUser)
+	myRouter.HandleFunc("/users", returnAllUsers).Methods("GET")
+	myRouter.HandleFunc("/users/{id}", returnSingleUser).Methods("GET")
+	myRouter.HandleFunc("/users", createUser).Methods("POST")
 	log.Fatal(http.ListenAndServe(":55555", myRouter))
-
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
